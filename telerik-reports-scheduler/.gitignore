@@ -1,0 +1,40 @@
+# Build outputs
+bin/
+obj/
+.aws-sam/
+
+# IDE files
+.vs/
+.vscode/
+*.user
+*.suo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Test files
+test-*-response.json
+response.json
+
+# Logs
+*.log
+
+# Environment specific files
+.env
+.env.local
+
+# AWS credentials (never commit these)
+.aws/
+credentials
+
+# NuGet packages
+packages/
+*.nupkg
+
+# Temporary files
+*.tmp
+*.temp
+
+# SAM build artifacts
+.aws-sam/

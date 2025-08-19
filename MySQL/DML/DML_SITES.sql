@@ -1,0 +1,2 @@
+INSERT INTO `ffavors_integ`.`Sites` (`Site_ID`, `Site_Name`, `Title`, `Site_url`, `IconPath`, `IconWidth`, `Audit_User`, `Trans_Date`) 
+VALUES (1, 'FFAVORS', 'Fresh Fruits and Vegetables Order Receipt System', 'http://localhost:4200/', '../images/logo8.gif', 58, 'KDInitialLod');
