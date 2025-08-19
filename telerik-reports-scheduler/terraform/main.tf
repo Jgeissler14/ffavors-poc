@@ -329,7 +329,7 @@ resource "aws_lambda_function" "report_polling" {
   memory_size     = 512
 
   vpc_config {
-    subnet_ids         = data.aws_subnets.default.ids
+    subnet_ids         = ["${data.aws_subnets.default.ids[0]}"]
     security_group_ids = [aws_security_group.lambda_sg.id]
   }
 

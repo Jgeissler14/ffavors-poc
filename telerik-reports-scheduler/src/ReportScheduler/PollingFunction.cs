@@ -116,6 +116,8 @@ namespace ReportScheduler
                     ["ParamId"] = schedule.Param_ID?.ToString() ?? "",
                     ["AppId"] = schedule.App_ID?.ToString() ?? ""
                 },
+                // TODO: Get the recipients from the database or configuration
+                Recipients = new List<string> { "jgeissler@eccoselect.com" }, // Default recipient if none specified
                 QueuedAt = DateTime.UtcNow
             };
 
@@ -127,8 +129,8 @@ namespace ReportScheduler
                 MessageBody = messageBody,
                 MessageAttributes = new Dictionary<string, MessageAttributeValue>
                 {
-                    ["ReportId"] = new MessageAttributeValue { DataType = "Number", StringValue = schedule.Report_ID.ToString() },
-                    ["ScheduleId"] = new MessageAttributeValue { DataType = "Number", StringValue = schedule.Reports_Sched_ID.ToString() }
+                    ["ReportId"] = new MessageAttributeValue { DataType = "String", StringValue = schedule.Report_ID.ToString() },
+                    ["ScheduleId"] = new MessageAttributeValue { DataType = "String", StringValue = schedule.Reports_Sched_ID.ToString() }
                 }
             };
 
@@ -189,6 +191,7 @@ namespace ReportScheduler
     {
         public int? ReportId { get; set; }
         public int ScheduleId { get; set; }
+        public List<string> Recipients { get; set; } = new();
         public Dictionary<string, object> Parameters { get; set; } = new();
         public DateTime QueuedAt { get; set; }
     }

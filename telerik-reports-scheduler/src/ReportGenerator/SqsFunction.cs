@@ -52,6 +52,12 @@ namespace ReportGenerator
 
             // Parse the message body
             var reportRequest = JsonSerializer.Deserialize<ReportQueueMessage>(message.Body);
+
+            if (reportRequest == null)
+            {
+                context.Logger.LogError($"Failed to deserialize SQS message body for message {message.MessageId}");
+                return; // Or throw an exception if you want SQS to retry
+            }
             
             context.Logger.LogInformation($"Generating report: {reportRequest.ReportName} (ID: {reportRequest.ReportId})");
 
@@ -61,7 +67,7 @@ namespace ReportGenerator
             try
             {
                 // Generate the report
-                var reportBytes = await GenerateReport(reportRequest, context);
+                var reportBytes = GenerateReport(reportRequest, context);
                 
                 // Upload to S3
                 var s3Key = await UploadToS3(reportBytes, reportRequest, executionId, context);
@@ -80,7 +86,7 @@ namespace ReportGenerator
             }
         }
 
-        private async Task<byte[]> GenerateReport(ReportQueueMessage request, ILambdaContext context)
+        private byte[] GenerateReport(ReportQueueMessage request, ILambdaContext context)
         {
             context.Logger.LogInformation($"Generating report of type: {request.ReportType}");
             
@@ -109,7 +115,7 @@ namespace ReportGenerator
             reportContent.AppendLine("REPORT CONFIGURATION");
             reportContent.AppendLine("===================");
             reportContent.AppendLine($"Report ID: {request.ReportId}");
-            reportContent.AppendLine($"Schedule ID: {request.ScheduleId}");
+            reportContent.AppendLine($"Schedule ID: {request.ScheduleId.ToString()}");
             reportContent.AppendLine($"Report Type: {request.ReportType}");
             reportContent.AppendLine($"Template: {request.TemplatePath}");
             reportContent.AppendLine($"Output Format: {request.OutputFormat}");
@@ -192,7 +198,7 @@ namespace ReportGenerator
             var bucketName = Environment.GetEnvironmentVariable("REPORTS_BUCKET");
             var timestamp = DateTime.UtcNow.ToString("yyyyMMdd_HHmmss");
             var fileExtension = GetFileExtension(request.OutputFormat);
-            var key = $"reports/{request.ReportId}/{DateTime.UtcNow:yyyy/MM/dd}/{request.ReportName}_{timestamp}_{executionId[..8]}.{fileExtension}";
+            var key = $"reports/{request.ReportId.ToString()}/{DateTime.UtcNow:yyyy/MM/dd}/{request.ReportName}_{timestamp}_{executionId[..8]}.{fileExtension}";
             
             context.Logger.LogInformation($"Uploading report to S3: {bucketName}/{key}");
             
@@ -205,8 +211,8 @@ namespace ReportGenerator
                 ContentType = GetContentType(request.OutputFormat),
                 ServerSideEncryptionMethod = ServerSideEncryptionMethod.AES256,
                 Metadata = {
-                    ["report-id"] = request.ReportId,
-                    ["schedule-id"] = request.ScheduleId,
+                    ["report-id"] = request.ReportId.ToString(),
+                    ["schedule-id"] = request.ScheduleId.ToString(),
                     ["execution-id"] = executionId,
                     ["generated-at"] = DateTime.UtcNow.ToString("O"),
                     ["queued-at"] = request.QueuedAt.ToString("O"),
@@ -275,7 +281,7 @@ Your {request.ReportName} is ready for download.
 
 Report Details:
 - Report ID: {request.ReportId}
-- Schedule ID: {request.ScheduleId}
+- Schedule ID: {request.ScheduleId.ToString()}
 - Report Name: {request.ReportName}
 - Generated: {DateTime.UtcNow:yyyy-MM-dd HH:mm:ss} UTC
 - Queued: {request.QueuedAt:yyyy-MM-dd HH:mm:ss} UTC
@@ -335,8 +341,8 @@ If you have questions, contact your system administrator.";
     // Shared message class (same as in PollingFunction)
     public class ReportQueueMessage
     {
-        public string ReportId { get; set; } = string.Empty;
-        public string ScheduleId { get; set; } = string.Empty;
+        public long ReportId { get; set; }
+        public long ScheduleId { get; set; }
         public string ReportName { get; set; } = string.Empty;
         public string ReportType { get; set; } = string.Empty;
         public string TemplatePath { get; set; } = string.Empty;
