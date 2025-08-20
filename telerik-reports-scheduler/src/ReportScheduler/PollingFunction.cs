@@ -32,7 +32,6 @@ namespace ReportScheduler
 
         public async Task<PollingResponse> FunctionHandler(ILambdaContext context)
         {
-            context.Logger.LogInformation("Starting report schedule polling from PostgreSQL.");
             var schedulesToRun = new List<ReportsSchedulerInfo>();
             var currentTime = DateTime.UtcNow;
 
