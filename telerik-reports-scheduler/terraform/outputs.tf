@@ -90,6 +90,11 @@ output "polling_schedule" {
   value       = var.polling_schedule
 }
 
+output "ecr_repository_url" {
+  description = "URL of the ECR repository for the Report Generator Lambda image"
+  value       = aws_ecr_repository.telerik_report_generator_ecr.repository_url
+}
+
 # Useful commands for monitoring and testing
 output "useful_commands" {
   description = "Useful AWS CLI commands for monitoring and testing"

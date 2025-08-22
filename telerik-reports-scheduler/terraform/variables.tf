@@ -109,7 +109,7 @@ variable "sqs_batch_size" {
 variable "max_concurrent_executions" {
   description = "Maximum number of concurrent Lambda executions for SQS processing"
   type        = number
-  default     = 10
+  default     = 1
   
   validation {
     condition     = var.max_concurrent_executions >= 1 && var.max_concurrent_executions <= 1000

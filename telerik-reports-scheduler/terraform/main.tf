@@ -81,6 +81,21 @@ resource "aws_s3_bucket_lifecycle_configuration" "reports_bucket_lifecycle" {
   }
 }
 
+resource "aws_ecr_repository" "telerik_report_generator_ecr" {
+  name                 = "telerik-report-generator-${var.environment}"
+  image_tag_mutability = "MUTABLE"
+
+  image_scanning_configuration {
+    scan_on_push = true
+  }
+
+  tags = {
+    Name        = "Telerik Report Generator ECR"
+    Environment = var.environment
+    Project     = "TelerikReportsScheduler"
+  }
+}
+
 resource "aws_security_group" "lambda_sg" {
   name        = "telerik-reports-scheduler-lambda-sg-${var.environment}"
   description = "Security group for the Telerik Reports Scheduler Lambda functions"
@@ -289,32 +304,12 @@ resource "null_resource" "build_polling" {
   }
 }
 
-resource "null_resource" "build_generator" {
-  triggers = {
-    code_hash = filebase64sha256("../src/ReportGenerator/SqsFunction.cs")
-  }
-
-  provisioner "local-exec" {
-    command = <<-EOT
-      cd ../src/ReportGenerator
-      dotnet publish -c Release -r linux-x64 --self-contained false
-    EOT
-  }
-}
-
 # Package Lambda functions
 data "archive_file" "polling_zip" {
   type        = "zip"
   source_dir  = "../src/ReportScheduler/bin/Release/net8.0/linux-x64/publish"
   output_path = "../polling-deployment.zip"
   depends_on  = [null_resource.build_polling]
-}
-
-data "archive_file" "generator_zip" {
-  type        = "zip"
-  source_dir  = "../src/ReportGenerator/bin/Release/net8.0/linux-x64/publish"
-  output_path = "../generator-deployment.zip"
-  depends_on  = [null_resource.build_generator]
 }
 
 # Polling Lambda Function (runs daily at 8 AM)
@@ -355,12 +350,10 @@ resource "aws_lambda_function" "report_polling" {
 
 # Report Generator Lambda Function (triggered by SQS)
 resource "aws_lambda_function" "report_generator" {
-  filename         = data.archive_file.generator_zip.output_path
   function_name    = "telerik-reports-generator-${var.environment}"
   role            = aws_iam_role.lambda_role.arn
-  handler         = "ReportGenerator::ReportGenerator.SqsFunction::FunctionHandler"
-  source_code_hash = data.archive_file.generator_zip.output_base64sha256
-  runtime         = "dotnet8"
+  package_type     = "Image"
+  image_uri        = "${aws_ecr_repository.telerik_report_generator_ecr.repository_url}:latest"
   timeout         = var.lambda_timeout
   memory_size     = var.lambda_memory_size
 
@@ -382,6 +375,7 @@ resource "aws_lambda_function" "report_generator" {
   depends_on = [
     aws_iam_role_policy.lambda_policy,
     aws_cloudwatch_log_group.generator_logs,
+    aws_ecr_repository.telerik_report_generator_ecr # Add dependency on ECR repo
   ]
 
   tags = {
