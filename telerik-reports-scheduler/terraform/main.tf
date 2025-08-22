@@ -305,14 +305,14 @@ resource "null_resource" "build_generator" {
 # Package Lambda functions
 data "archive_file" "polling_zip" {
   type        = "zip"
-  source_dir  = "../src/ReportScheduler/bin/Release/net6.0/linux-x64/publish"
+  source_dir  = "../src/ReportScheduler/bin/Release/net8.0/linux-x64/publish"
   output_path = "../polling-deployment.zip"
   depends_on  = [null_resource.build_polling]
 }
 
 data "archive_file" "generator_zip" {
   type        = "zip"
-  source_dir  = "../src/ReportGenerator/bin/Release/net6.0/linux-x64/publish"
+  source_dir  = "../src/ReportGenerator/bin/Release/net8.0/linux-x64/publish"
   output_path = "../generator-deployment.zip"
   depends_on  = [null_resource.build_generator]
 }
@@ -324,7 +324,7 @@ resource "aws_lambda_function" "report_polling" {
   role            = aws_iam_role.lambda_role.arn
   handler         = "ReportScheduler::ReportScheduler.PollingFunction::FunctionHandler"
   source_code_hash = data.archive_file.polling_zip.output_base64sha256
-  runtime         = "dotnet6"
+  runtime         = "dotnet8"
   timeout         = 60
   memory_size     = 512
 
@@ -360,7 +360,7 @@ resource "aws_lambda_function" "report_generator" {
   role            = aws_iam_role.lambda_role.arn
   handler         = "ReportGenerator::ReportGenerator.SqsFunction::FunctionHandler"
   source_code_hash = data.archive_file.generator_zip.output_base64sha256
-  runtime         = "dotnet6"
+  runtime         = "dotnet8"
   timeout         = var.lambda_timeout
   memory_size     = var.lambda_memory_size
 
