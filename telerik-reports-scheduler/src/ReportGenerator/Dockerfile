@@ -37,7 +37,7 @@ COPY --from=build-env /app/out .
 # Install system dependencies for SkiaSharp
 # These commands are for Amazon Linux 2 based images
 RUN dnf update -y && \
-    dnf install -y fontconfig freetype
+    dnf install -y fontconfig freetype urw-base35-fonts-legacy
 
 # Create a writable font cache directory
 RUN mkdir -p /tmp/font-cache && chmod 777 /tmp/font-cache
