@@ -1,0 +1,89 @@
+{
+  "Version": 1,
+  "WorkspaceRootPath": "C:\\FFAVORS\\TEST -OLD\\ffavorsapi\\",
+  "Documents": [
+    {
+      "AbsoluteMoniker": "D:0:0:{C4FBF36E-DE8F-4823-88A5-6562EBEE9C38}|ffavorsapi.csproj|c:\\ffavors\\test -old\\ffavorsapi\\controllers\\schedulescontroller.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{C4FBF36E-DE8F-4823-88A5-6562EBEE9C38}|ffavorsapi.csproj|solutionrelative:controllers\\schedulescontroller.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{C4FBF36E-DE8F-4823-88A5-6562EBEE9C38}|ffavorsapi.csproj|c:\\ffavors\\test -old\\ffavorsapi\\readfile.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{C4FBF36E-DE8F-4823-88A5-6562EBEE9C38}|ffavorsapi.csproj|solutionrelative:readfile.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    }
+  ],
+  "DocumentGroupContainers": [
+    {
+      "Orientation": 1,
+      "VerticalTabListWidth": 256,
+      "DocumentGroups": [
+        {
+          "DockedHeight": 200,
+          "SelectedChildIndex": 10,
+          "Children": [
+            {
+              "$type": "Bookmark",
+              "Name": "ST:0:0:{57d563b6-44a5-47df-85be-f4199ad6b651}"
+            },
+            {
+              "$type": "Bookmark",
+              "Name": "ST:131:0:{116d2292-e37d-41cd-a077-ebacac4c8cc4}"
+            },
+            {
+              "$type": "Bookmark",
+              "Name": "ST:128:0:{1fc202d4-d401-403c-9834-5b218574bb67}"
+            },
+            {
+              "$type": "Bookmark",
+              "Name": "ST:128:0:{75188d03-9892-4ae2-abf1-207126247ce5}"
+            },
+            {
+              "$type": "Bookmark",
+              "Name": "ST:132:0:{116d2292-e37d-41cd-a077-ebacac4c8cc4}"
+            },
+            {
+              "$type": "Bookmark",
+              "Name": "ST:133:0:{116d2292-e37d-41cd-a077-ebacac4c8cc4}"
+            },
+            {
+              "$type": "Bookmark",
+              "Name": "ST:135:0:{116d2292-e37d-41cd-a077-ebacac4c8cc4}"
+            },
+            {
+              "$type": "Bookmark",
+              "Name": "ST:0:0:{aa2115a1-9712-457b-9047-dbb71ca2cdd2}"
+            },
+            {
+              "$type": "Bookmark",
+              "Name": "ST:0:0:{1c4feeaa-4718-4aa9-859d-94ce25d182ba}"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 1,
+              "Title": "ReadFile.cs",
+              "DocumentMoniker": "C:\\FFAVORS\\TEST -OLD\\ffavorsapi\\ReadFile.cs",
+              "RelativeDocumentMoniker": "ReadFile.cs",
+              "ToolTip": "C:\\FFAVORS\\TEST -OLD\\ffavorsapi\\ReadFile.cs",
+              "RelativeToolTip": "ReadFile.cs",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAA4AAAAIAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2025-08-29T13:30:21.449Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 0,
+              "Title": "SchedulesController.cs",
+              "DocumentMoniker": "C:\\FFAVORS\\TEST -OLD\\ffavorsapi\\Controllers\\SchedulesController.cs",
+              "RelativeDocumentMoniker": "Controllers\\SchedulesController.cs",
+              "ToolTip": "C:\\FFAVORS\\TEST -OLD\\ffavorsapi\\Controllers\\SchedulesController.cs",
+              "RelativeToolTip": "Controllers\\SchedulesController.cs",
+              "ViewState": "AgIAACsAAAAAAAAAAAAAwDQAAAAMAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2025-08-29T12:18:17.143Z",
+              "EditorCaption": ""
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

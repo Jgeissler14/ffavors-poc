@@ -1,0 +1,118 @@
+  {
+    "Schedules": [
+      {
+        "Report_Name": "FFAVS226",
+        "Schedule_ID": 9,
+        "Schedule_Description": "FFAVS226 Weekly on Monday CO",
+        "Output_Format": "PDF",
+        "Frequency": "Weekly",
+        "Frequency_Number": null,
+        "Frequency_Days": "Mon",
+        "Frequency_Time": "07:05:00",
+        "Start_Date": "2000-01-01T12:00:00",
+        "Next_Run_Date": "2025-08-18T07:05:00",
+        "Last_Run_Date": null,
+        "End_Date": null,
+        "Status": null,
+        "MultipleSends": 0,
+        "DriverDrivenEmail": 0,
+        "toEmails": "robin.g.frazier@usda.gov",
+        "ccEmails": "kory.dickman@usda.gov",
+        "Subject": "FFAVS226 Past Due Receipts Report",
+        "Body": "Report attached. Please do not reply to this e-mail."
+      },
+      {
+        "Report_Name": "FFAVS226",
+        "Schedule_ID": 10,
+        "Schedule_Description": "FFAVS226 Weekly on Monday WY",
+        "Output_Format": "PDF",
+        "Frequency": "Weekly",
+        "Frequency_Number": null,
+        "Frequency_Days": "Mon",
+        "Frequency_Time": "07:06:00",
+        "Start_Date": "2000-01-01T12:00:00",
+        "Next_Run_Date": "2025-08-18T07:06:00",
+        "Last_Run_Date": null,
+        "End_Date": null,
+        "Status": null,
+        "MultipleSends": 0,
+        "DriverDrivenEmail": 0,
+        "toEmails": "kory.dickman@usda.gov",
+        "ccEmails": "robin.g.frazier@usda.gov",
+        "Subject": "FFAVS226 Past Due Receipts Report",
+        "Body": "WY Report attached. Please do not reply to this e-mail."
+      }
+    ],
+    "Parameters": [
+      {
+        "Report_ID": 36,
+        "Schedule_ID": 9,
+        "Param_Name": "STATE1",
+        "Param_Value": "CO",
+        "DriverDriven": 0
+      },
+      {
+        "Report_ID": 36,
+        "Schedule_ID": 9,
+        "Param_Name": "STATE2",
+        "Param_Value": null,
+        "DriverDriven": null
+      },
+      {
+        "Report_ID": 36,
+        "Schedule_ID": 9,
+        "Param_Name": "STATE3",
+        "Param_Value": null,
+        "DriverDriven": null
+      },
+      {
+        "Report_ID": 36,
+        "Schedule_ID": 9,
+        "Param_Name": "STATE4",
+        "Param_Value": null,
+        "DriverDriven": null
+      },
+      {
+        "Report_ID": 36,
+        "Schedule_ID": 9,
+        "Param_Name": "STATE5",
+        "Param_Value": null,
+        "DriverDriven": null
+      },
+      {
+        "Report_ID": 36,
+        "Schedule_ID": 10,
+        "Param_Name": "STATE1",
+        "Param_Value": "WY",
+        "DriverDriven": 0
+      },
+      {
+        "Report_ID": 36,
+        "Schedule_ID": 10,
+        "Param_Name": "STATE2",
+        "Param_Value": null,
+        "DriverDriven": null
+      },
+      {
+        "Report_ID": 36,
+        "Schedule_ID": 10,
+        "Param_Name": "STATE3",
+        "Param_Value": null,
+        "DriverDriven": null
+      },
+      {
+        "Report_ID": 36,
+        "Schedule_ID": 10,
+        "Param_Name": "STATE4",
+        "Param_Value": null,
+        "DriverDriven": null
+      },
+      {
+        "Report_ID": 36,
+        "Schedule_ID": 10,
+        "Param_Name": "STATE5",
+        "Param_Value": null,
+        "DriverDriven": null
+      }
+    ]
+  }
