@@ -132,3 +132,39 @@ output "architecture_summary" {
     cost_estimate = "~$10-20/month for typical enterprise usage"
   }
 }
+
+output "ffavorsapi_ecr_repository_url" {
+  description = "URL of the ECR repository for the FFavors API image"
+  value       = aws_ecr_repository.ffavorsapi_ecr.repository_url
+}
+
+output "ffavorsapi_alb_dns_name" {
+  description = "DNS name of the FFavors API Application Load Balancer"
+  value       = aws_lb.ffavorsapi_alb.dns_name
+}
+
+output "ffavorsapi_ecs_cluster_name" {
+  description = "Name of the FFavors API ECS Cluster"
+  value       = aws_ecs_cluster.ffavorsapi_cluster.name
+}
+
+output "ffavorsapi_ecs_service_name" {
+  description = "Name of the FFavors API ECS Service"
+  value       = aws_ecs_service.ffavorsapi_service.name
+}
+
+# Debugging outputs
+output "all_subnets_debug" {
+  description = "DEBUG: Raw data from data.aws_subnet.all_subnets"
+  value       = data.aws_subnet.all_subnets
+}
+
+output "subnets_by_az_debug" {
+  description = "DEBUG: Subnets grouped by availability zone"
+  value       = local.subnets_by_az
+}
+
+output "unique_subnets_debug" {
+  description = "DEBUG: Final list of unique subnets"
+  value       = local.unique_subnets
+}

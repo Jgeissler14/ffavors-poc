@@ -537,3 +537,302 @@ resource "aws_sns_topic_subscription" "email_alerts" {
   protocol  = "email"
   endpoint  = var.alarm_email
 }
+
+# FFavors API ECR Repository
+resource "aws_ecr_repository" "ffavorsapi_ecr" {
+  name                 = "ffavorsapi-${var.environment}"
+  image_tag_mutability = "MUTABLE"
+
+  image_scanning_configuration {
+    scan_on_push = true
+  }
+
+  tags = {
+    Name        = "FFavors API ECR"
+    Environment = var.environment
+    Project     = "FFavorsAPI"
+  }
+}
+
+# FFavors API ECS Cluster
+resource "aws_ecs_cluster" "ffavorsapi_cluster" {
+  name = "ffavorsapi-cluster-${var.environment}"
+
+  setting {
+    name  = "containerInsights"
+    value = "enabled"
+  }
+
+  tags = {
+    Name        = "FFavors API Cluster"
+    Environment = var.environment
+    Project     = "FFavorsAPI"
+  }
+}
+
+# Security Group for the Application Load Balancer
+resource "aws_security_group" "ffavorsapi_alb" {
+  name        = "ffavorsapi-alb-sg-${var.environment}"
+  description = "Allow HTTP traffic to FFavors API ALB"
+  vpc_id      = var.vpc_id
+
+  ingress {
+    protocol    = "tcp"
+    from_port   = 80
+    to_port     = 80
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  egress {
+    protocol    = "-1"
+    from_port   = 0
+    to_port     = 0
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = {
+    Name        = "FFavors API ALB SG"
+    Environment = var.environment
+    Project     = "FFavorsAPI"
+  }
+}
+
+# Security Group for the ECS Tasks
+resource "aws_security_group" "ffavorsapi_ecs_tasks" {
+  name        = "ffavorsapi-ecs-tasks-sg-${var.environment}"
+  description = "Allow traffic from the ALB to the ECS tasks"
+  vpc_id      = var.vpc_id
+
+  ingress {
+    protocol        = "tcp"
+    from_port       = 8080
+    to_port         = 8080
+    security_groups = [aws_security_group.ffavorsapi_alb.id]
+  }
+
+  egress {
+    protocol    = "-1"
+    from_port   = 0
+    to_port     = 0
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = {
+    Name        = "FFavors API ECS Tasks SG"
+    Environment = var.environment
+    Project     = "FFavorsAPI"
+  }
+}
+
+data "aws_subnet" "all_subnets" {
+  for_each = toset(data.aws_subnets.default.ids)
+  id       = each.value
+}
+
+locals {
+  subnets_by_az = {
+    for id, subnet in data.aws_subnet.all_subnets : subnet.availability_zone => id...
+  }
+  unique_subnets = [for ids in values(local.subnets_by_az) : ids[0]]
+}
+
+# Application Load Balancer
+resource "aws_lb" "ffavorsapi_alb" {
+  name               = "ffavorsapi-alb-${var.environment}"
+  internal           = false
+  load_balancer_type = "application"
+  security_groups    = [aws_security_group.ffavorsapi_alb.id]
+  subnets            = local.unique_subnets
+
+  tags = {
+    Name        = "FFavors API ALB"
+    Environment = var.environment
+    Project     = "FFavorsAPI"
+  }
+}
+
+# Target Group for the ALB
+resource "aws_lb_target_group" "ffavorsapi_tg" {
+  name        = "ffavorsapi-tg-${var.environment}"
+  port        = 8080
+  protocol    = "HTTP"
+  vpc_id      = var.vpc_id
+  target_type = "ip"
+
+  health_check {
+    path                = "/swagger/index.html"
+    protocol            = "HTTP"
+    matcher             = "200"
+    interval            = 30
+    timeout             = 5
+    healthy_threshold   = 2
+    unhealthy_threshold = 2
+  }
+
+  tags = {
+    Name        = "FFavors API Target Group"
+    Environment = var.environment
+    Project     = "FFavorsAPI"
+  }
+}
+
+# Listener for the ALB
+resource "aws_lb_listener" "ffavorsapi_listener" {
+  load_balancer_arn = aws_lb.ffavorsapi_alb.arn
+  port              = "80"
+  protocol          = "HTTP"
+
+  default_action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.ffavorsapi_tg.arn
+  }
+
+  tags = {
+    Name        = "FFavors API ALB Listener"
+    Environment = var.environment
+    Project     = "FFavorsAPI"
+  }
+}
+
+# IAM Role for ECS Task Execution
+resource "aws_iam_role" "ffavorsapi_ecs_execution_role" {
+  name = "ffavorsapi-ecs-execution-role-${var.environment}"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = "sts:AssumeRole"
+        Effect = "Allow"
+        Principal = {
+          Service = "ecs-tasks.amazonaws.com"
+        }
+      }
+    ]
+  })
+
+  tags = {
+    Name        = "FFavors API ECS Execution Role"
+    Environment = var.environment
+    Project     = "FFavorsAPI"
+  }
+}
+
+resource "aws_iam_role_policy_attachment" "ffavorsapi_ecs_execution_role_policy" {
+  role       = aws_iam_role.ffavorsapi_ecs_execution_role.name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
+}
+
+# IAM Role for ECS Tasks
+resource "aws_iam_role" "ffavorsapi_ecs_task_role" {
+  name = "ffavorsapi-ecs-task-role-${var.environment}"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = "sts:AssumeRole"
+        Effect = "Allow"
+        Principal = {
+          Service = "ecs-tasks.amazonaws.com"
+        }
+      }
+    ]
+  })
+
+  tags = {
+    Name        = "FFavors API ECS Task Role"
+    Environment = var.environment
+    Project     = "FFavorsAPI"
+  }
+}
+
+# CloudWatch Log Group for the ECS Service
+resource "aws_cloudwatch_log_group" "ffavorsapi_logs" {
+  name              = "/ecs/ffavorsapi-${var.environment}"
+  retention_in_days = var.log_retention_days
+
+  tags = {
+    Name        = "FFavors API Logs"
+    Environment = var.environment
+    Project     = "FFavorsAPI"
+  }
+}
+
+# ECS Task Definition
+resource "aws_ecs_task_definition" "ffavorsapi_task" {
+  family                   = "ffavorsapi-${var.environment}"
+  network_mode             = "awsvpc"
+  requires_compatibilities = ["FARGATE"]
+  cpu                      = "256"
+  memory                   = "512"
+  execution_role_arn       = aws_iam_role.ffavorsapi_ecs_execution_role.arn
+  task_role_arn            = aws_iam_role.ffavorsapi_ecs_task_role.arn
+
+  container_definitions = jsonencode([
+    {
+      name      = "ffavorsapi"
+      image     = "${aws_ecr_repository.ffavorsapi_ecr.repository_url}:latest"
+      essential = true
+      portMappings = [
+        {
+          containerPort = 8080
+          hostPort      = 8080
+        }
+      ]
+      logConfiguration = {
+        logDriver = "awslogs"
+        options = {
+          "awslogs-group"         = aws_cloudwatch_log_group.ffavorsapi_logs.name
+          "awslogs-region"        = var.aws_region
+          "awslogs-stream-prefix" = "ecs"
+        }
+      }
+      environment = [
+        {
+          name  = "ASPNETCORE_ENVIRONMENT"
+          value = "Development"
+        },
+        {
+          name  = "ASPNETCORE_URLS"
+          value = "http://+:8080"
+        }
+      ]
+    }
+  ])
+
+  tags = {
+    Name        = "FFavors API Task Definition"
+    Environment = var.environment
+    Project     = "FFavorsAPI"
+  }
+}
+
+# ECS Service
+resource "aws_ecs_service" "ffavorsapi_service" {
+  name            = "ffavorsapi-service-${var.environment}"
+  cluster         = aws_ecs_cluster.ffavorsapi_cluster.id
+  task_definition = aws_ecs_task_definition.ffavorsapi_task.arn
+  desired_count   = 1
+  launch_type     = "FARGATE"
+
+  network_configuration {
+    subnets         = local.unique_subnets
+    security_groups = [aws_security_group.ffavorsapi_ecs_tasks.id]
+    assign_public_ip = true
+  }
+
+  load_balancer {
+    target_group_arn = aws_lb_target_group.ffavorsapi_tg.arn
+    container_name   = "ffavorsapi"
+    container_port   = 8080
+  }
+
+  depends_on = [aws_lb_listener.ffavorsapi_listener]
+
+  tags = {
+    Name        = "FFavors API ECS Service"
+    Environment = var.environment
+    Project     = "FFavorsAPI"
+  }
+}
