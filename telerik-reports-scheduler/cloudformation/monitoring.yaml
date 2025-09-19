@@ -1,0 +1,122 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Monitoring resources for the Telerik Reports Scheduler.'
+
+Parameters:
+  Environment:
+    Type: String
+  AlarmEmail:
+    Type: String
+  ReportPollingFunctionName:
+    Type: String
+  ReportGeneratorFunctionName:
+    Type: String
+  ReportQueueName:
+    Type: String
+  ReportDlqName:
+    Type: String
+
+Conditions:
+  CreateSnsTopic: !Not [!Equals [!Ref AlarmEmail, '']]
+
+Resources:
+  AlertsTopic:
+    Type: 'AWS::SNS::Topic'
+    Condition: CreateSnsTopic
+    Properties:
+      TopicName: !Sub 'telerik-reports-scheduler-alerts-${Environment}'
+      Subscription:
+        - Protocol: 'email'
+          Endpoint: !Ref AlarmEmail
+      Tags:
+        - Key: 'Name'
+          Value: 'Telerik Reports Alerts'
+        - Key: 'Environment'
+          Value: !Ref Environment
+
+  PollingErrorsAlarm:
+    Type: 'AWS::CloudWatch::Alarm'
+    Properties:
+      AlarmName: !Sub 'telerik-reports-polling-errors-${Environment}'
+      ComparisonOperator: 'GreaterThanThreshold'
+      EvaluationPeriods: 2
+      MetricName: 'Errors'
+      Namespace: 'AWS/Lambda'
+      Period: 300
+      Statistic: 'Sum'
+      Threshold: 1
+      AlarmDescription: 'This metric monitors polling lambda errors'
+      AlarmActions: !If [CreateSnsTopic, [!Ref AlertsTopic], []]
+      Dimensions:
+        - Name: 'FunctionName'
+          Value: !Ref ReportPollingFunctionName
+      Tags:
+        - Key: 'Name'
+          Value: 'Polling Error Alarm'
+        - Key: 'Environment'
+          Value: !Ref Environment
+
+  GeneratorErrorsAlarm:
+    Type: 'AWS::CloudWatch::Alarm'
+    Properties:
+      AlarmName: !Sub 'telerik-reports-generator-errors-${Environment}'
+      ComparisonOperator: 'GreaterThanThreshold'
+      EvaluationPeriods: 2
+      MetricName: 'Errors'
+      Namespace: 'AWS/Lambda'
+      Period: 300
+      Statistic: 'Sum'
+      Threshold: 1
+      AlarmDescription: 'This metric monitors generator lambda errors'
+      AlarmActions: !If [CreateSnsTopic, [!Ref AlertsTopic], []]
+      Dimensions:
+        - Name: 'FunctionName'
+          Value: !Ref ReportGeneratorFunctionName
+      Tags:
+        - Key: 'Name'
+          Value: 'Generator Error Alarm'
+        - Key: 'Environment'
+          Value: !Ref Environment
+
+  QueueDepthAlarm:
+    Type: 'AWS::CloudWatch::Alarm'
+    Properties:
+      AlarmName: !Sub 'telerik-reports-queue-depth-${Environment}'
+      ComparisonOperator: 'GreaterThanThreshold'
+      EvaluationPeriods: 2
+      MetricName: 'ApproximateNumberOfMessagesVisible'
+      Namespace: 'AWS/SQS'
+      Period: 300
+      Statistic: 'Average'
+      Threshold: 10
+      AlarmDescription: 'This metric monitors SQS queue depth'
+      AlarmActions: !If [CreateSnsTopic, [!Ref AlertsTopic], []]
+      Dimensions:
+        - Name: 'QueueName'
+          Value: !Ref ReportQueueName
+      Tags:
+        - Key: 'Name'
+          Value: 'Queue Depth Alarm'
+        - Key: 'Environment'
+          Value: !Ref Environment
+
+  DlqMessagesAlarm:
+    Type: 'AWS::CloudWatch::Alarm'
+    Properties:
+      AlarmName: !Sub 'telerik-reports-dlq-messages-${Environment}'
+      ComparisonOperator: 'GreaterThanThreshold'
+      EvaluationPeriods: 1
+      MetricName: 'ApproximateNumberOfMessagesVisible'
+      Namespace: 'AWS/SQS'
+      Period: 300
+      Statistic: 'Average'
+      Threshold: 0
+      AlarmDescription: 'This metric monitors dead letter queue messages'
+      AlarmActions: !If [CreateSnsTopic, [!Ref AlertsTopic], []]
+      Dimensions:
+        - Name: 'QueueName'
+          Value: !Ref ReportDlqName
+      Tags:
+        - Key: 'Name'
+          Value: 'Dead Letter Queue Alarm'
+        - Key: 'Environment'
+          Value: !Ref Environment

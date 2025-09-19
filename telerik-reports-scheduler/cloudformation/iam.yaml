@@ -1,0 +1,135 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'IAM roles and policies for the Telerik Reports Scheduler.'
+
+Parameters:
+  Environment:
+    Type: String
+  FromEmail:
+    Type: String
+  DbConnectionSsmParameterName:
+    Type: String
+  ReportsBucketArn:
+    Type: String
+  ReportQueueArn:
+    Type: String
+  ReportDlqArn:
+    Type: String
+
+Resources:
+  LambdaRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      RoleName: !Sub 'telerik-reports-scheduler-lambda-role-${Environment}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: 'Allow'
+            Principal:
+              Service: 'lambda.amazonaws.com'
+            Action: 'sts:AssumeRole'
+      Tags:
+        - Key: 'Name'
+          Value: 'Telerik Reports Lambda Role'
+        - Key: 'Environment'
+          Value: !Ref Environment
+
+  LambdaPolicy:
+    Type: 'AWS::IAM::Policy'
+    Properties:
+      PolicyName: !Sub 'telerik-reports-scheduler-lambda-policy-${Environment}'
+      Roles:
+        - !Ref LambdaRole
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: 'Allow'
+            Action:
+              - 'logs:CreateLogGroup'
+              - 'logs:CreateLogStream'
+              - 'logs:PutLogEvents'
+            Resource: !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/*'
+          - Effect: 'Allow'
+            Action:
+              - 's3:GetObject'
+              - 's3:PutObject'
+              - 's3:DeleteObject'
+            Resource: !Sub '${ReportsBucketArn}/*'
+          - Effect: 'Allow'
+            Action: 's3:ListBucket'
+            Resource: !Ref ReportsBucketArn
+          - Effect: 'Allow'
+            Action:
+              - 'ses:SendEmail'
+              - 'ses:SendRawEmail'
+            Resource: '*'
+            Condition:
+              StringEquals:
+                'ses:FromAddress': !Ref FromEmail
+          - Effect: 'Allow'
+            Action:
+              - 'sqs:SendMessage'
+              - 'sqs:ReceiveMessage'
+              - 'sqs:DeleteMessage'
+              - 'sqs:GetQueueAttributes'
+            Resource:
+              - !Ref ReportQueueArn
+              - !Ref ReportDlqArn
+          - Effect: 'Allow'
+            Action: 'cloudwatch:PutMetricData'
+            Resource: '*'
+          - Effect: 'Allow'
+            Action: 'ssm:GetParameter'
+            Resource: !Sub 'arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/${DbConnectionSsmParameterName}'
+          - Effect: 'Allow'
+            Action:
+              - 'ec2:CreateNetworkInterface'
+              - 'ec2:DescribeNetworkInterfaces'
+              - 'ec2:DeleteNetworkInterface'
+            Resource: '*'
+
+  FfavorsApiEcsExecutionRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      RoleName: !Sub 'ffavorsapi-ecs-execution-role-${Environment}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: 'Allow'
+            Principal:
+              Service: 'ecs-tasks.amazonaws.com'
+            Action: 'sts:AssumeRole'
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy'
+      Tags:
+        - Key: 'Name'
+          Value: 'FFavors API ECS Execution Role'
+        - Key: 'Environment'
+          Value: !Ref Environment
+
+  FfavorsApiEcsTaskRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      RoleName: !Sub 'ffavorsapi-ecs-task-role-${Environment}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: 'Allow'
+            Principal:
+              Service: 'ecs-tasks.amazonaws.com'
+            Action: 'sts:AssumeRole'
+      Tags:
+        - Key: 'Name'
+          Value: 'FFavors API ECS Task Role'
+        - Key: 'Environment'
+          Value: !Ref Environment
+
+Outputs:
+  LambdaRoleArn:
+    Description: 'ARN of the Lambda Role'
+    Value: !GetAtt LambdaRole.Arn
+  FfavorsApiEcsExecutionRoleArn:
+    Description: 'ARN of the FFavors API ECS Execution Role'
+    Value: !GetAtt FfavorsApiEcsExecutionRole.Arn
+  FfavorsApiEcsTaskRoleArn:
+    Description: 'ARN of the FFavors API ECS Task Role'
+    Value: !GetAtt FfavorsApiEcsTaskRole.Arn

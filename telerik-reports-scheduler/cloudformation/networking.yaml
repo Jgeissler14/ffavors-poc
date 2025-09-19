@@ -1,0 +1,91 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Networking resources for the Telerik Reports Scheduler.'
+
+Parameters:
+  Environment:
+    Type: String
+  VpcId:
+    Type: 'AWS::EC2::VPC::Id'
+  VpcPrivateSubnetIds:
+    Type: 'String'
+    Description: 'List of private subnet IDs for the VPC.'
+
+Resources:
+  # 1. Define all Security Groups without any ingress rules.
+  LambdaSg:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      GroupName: !Sub 'telerik-reports-scheduler-lambda-sg-${Environment}'
+      GroupDescription: 'Security group for the Telerik Reports Scheduler Lambda functions'
+      VpcId: !Ref VpcId
+      SecurityGroupEgress:
+        - IpProtocol: '-1'
+          CidrIp: '0.0.0.0/0'
+      Tags:
+        - Key: 'Name'
+          Value: 'Telerik Reports Lambda SG'
+        - Key: 'Environment'
+          Value: !Ref Environment
+
+  FfavorsApiAlbSg:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      GroupName: !Sub 'ffavorsapi-alb-sg-${Environment}'
+      GroupDescription: 'Allow HTTP traffic to FFavors API ALB'
+      VpcId: !Ref VpcId
+      Tags:
+        - Key: 'Name'
+          Value: 'FFavors API ALB SG'
+        - Key: 'Environment'
+          Value: !Ref Environment
+
+  FfavorsApiEcsTasksSg:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      GroupName: !Sub 'ffavorsapi-ecs-tasks-sg-${Environment}'
+      GroupDescription: 'Allow traffic from the ALB to the ECS tasks'
+      VpcId: !Ref VpcId
+      Tags:
+        - Key: 'Name'
+          Value: 'FFavors API ECS Tasks SG'
+        - Key: 'Environment'
+          Value: !Ref Environment
+
+  # 3. Define all ingress rules separately, making dependencies explicit.
+  AlbIngressFromLambda:
+    Type: 'AWS::EC2::SecurityGroupIngress'
+    Properties:
+      GroupId: !Ref FfavorsApiAlbSg
+      IpProtocol: 'tcp'
+      FromPort: 80
+      ToPort: 80
+      SourceSecurityGroupId: !Ref LambdaSg
+
+  EcsIngressFromAlb:
+    Type: 'AWS::EC2::SecurityGroupIngress'
+    Properties:
+      GroupId: !Ref FfavorsApiEcsTasksSg
+      IpProtocol: 'tcp'
+      FromPort: 8080
+      ToPort: 8080
+      SourceSecurityGroupId: !Ref FfavorsApiAlbSg
+
+  VpceIngressFromLambda:
+    Type: 'AWS::EC2::SecurityGroupIngress'
+    Properties:
+      GroupId: !Ref FfavorsApiAlbSg
+      IpProtocol: 'tcp'
+      FromPort: 443
+      ToPort: 443
+      SourceSecurityGroupId: !Ref LambdaSg
+
+Outputs:
+  LambdaSgId:
+    Description: 'ID of the Lambda Security Group'
+    Value: !Ref LambdaSg
+  FfavorsApiAlbSgId:
+    Description: 'ID of the FFavors API ALB Security Group'
+    Value: !Ref FfavorsApiAlbSg
+  FfavorsApiEcsTasksSgId:
+    Description: 'ID of the FFavors API ECS Tasks Security Group'
+    Value: !Ref FfavorsApiEcsTasksSg

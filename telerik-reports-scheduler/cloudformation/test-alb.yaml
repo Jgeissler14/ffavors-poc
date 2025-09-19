@@ -1,0 +1,53 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Test ALB and Target Group'
+
+Parameters:
+  VpcId:
+    Type: 'AWS::EC2::VPC::Id'
+    Default: 'vpc-0c6b7e34ce137c4b7'
+  SubnetIds:
+    Type: 'CommaDelimitedList'
+    Default: 'subnet-01bb73db87bb2699d,subnet-0794816118bcbcc1d'
+
+Resources:
+  TestSg:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      GroupDescription: 'Test security group'
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: 'tcp'
+          FromPort: 80
+          ToPort: 80
+          CidrIp: '10.0.0.0/8'
+
+  TestAlb:
+    Type: 'AWS::ElasticLoadBalancingV2::LoadBalancer'
+    Properties:
+      Scheme: 'internal'
+      LoadBalancerType: 'application'
+      SecurityGroups:
+        - !Ref TestSg
+      Subnets: !Ref SubnetIds
+
+  TestTg:
+    Type: 'AWS::ElasticLoadBalancingV2::TargetGroup'
+    Properties:
+      Port: 8080
+      Protocol: 'HTTP'
+      VpcId: !Ref VpcId
+      TargetType: 'ip'
+      HealthCheckPath: '/'
+      HealthCheckProtocol: 'HTTP'
+
+  TestListener:
+    Type: 'AWS::ElasticLoadBalancingV2::Listener'
+    Properties:
+      LoadBalancerArn: !Ref TestAlb
+      Port: 80
+      Protocol: 'HTTP'
+      DefaultActions:
+        - Type: 'forward'
+          ForwardConfig:
+            TargetGroups:
+              - TargetGroupArn: !Ref TestTg

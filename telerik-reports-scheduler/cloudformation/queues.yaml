@@ -1,0 +1,55 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'SQS queues for the Telerik Reports Scheduler.'
+
+Parameters:
+  Environment:
+    Type: String
+  LambdaTimeout:
+    Type: Number
+
+Resources:
+  ReportQueue:
+    Type: 'AWS::SQS::Queue'
+    Properties:
+      QueueName: !Sub 'telerik-reports-queue-${Environment}'
+      VisibilityTimeout: 1800
+      MessageRetentionPeriod: 1209600
+      MaximumMessageSize: 262144
+      DelaySeconds: 0
+      ReceiveMessageWaitTimeSeconds: 20
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt ReportDlq.Arn
+        maxReceiveCount: 3
+      Tags:
+        - Key: 'Name'
+          Value: 'Telerik Reports Queue'
+        - Key: 'Environment'
+          Value: !Ref Environment
+
+  ReportDlq:
+    Type: 'AWS::SQS::Queue'
+    Properties:
+      QueueName: !Sub 'telerik-reports-dlq-${Environment}'
+      MessageRetentionPeriod: 1209600
+      Tags:
+        - Key: 'Name'
+          Value: 'Telerik Reports Dead Letter Queue'
+        - Key: 'Environment'
+          Value: !Ref Environment
+
+Outputs:
+  ReportQueueArn:
+    Description: 'ARN of the Report Queue'
+    Value: !GetAtt ReportQueue.Arn
+  ReportQueueUrl:
+    Description: 'URL of the Report Queue'
+    Value: !Ref ReportQueue
+  ReportDlqArn:
+    Description: 'ARN of the Dead Letter Queue'
+    Value: !GetAtt ReportDlq.Arn
+  ReportQueueName:
+    Description: 'Name of the Report Queue'
+    Value: !GetAtt ReportQueue.QueueName
+  ReportDlqName:
+    Description: 'Name of the Dead Letter Queue'
+    Value: !GetAtt ReportDlq.QueueName

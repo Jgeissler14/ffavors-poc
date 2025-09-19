@@ -1,0 +1,168 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Lambda functions for the Telerik Reports Scheduler.'
+
+Parameters:
+  Environment:
+    Type: String
+  LambdaTimeout:
+    Type: Number
+  LambdaMemorySize:
+    Type: Number
+  LogRetentionDays:
+    Type: Number
+  PollingSchedule:
+    Type: String
+  MaxConcurrentExecutions:
+    Type: Number
+    MinValue: 2
+  DbConnectionSsmParameterName:
+    Type: String
+  PollingLambdaS3Bucket:
+    Type: String
+  PollingLambdaS3Key:
+    Type: String
+  GeneratorLambdaS3Bucket:
+    Type: String
+  GeneratorLambdaS3Key:
+    Type: String
+  LambdaRoleArn:
+    Type: String
+  ReportQueueArn:
+    Type: String
+  ReportQueueUrl:
+    Type: String
+  LambdaSgId:
+    Type: String
+  FfavorsApiAlbDnsName:
+    Type: String
+  ReportsBucketName:
+    Type: String
+  FromEmail:
+    Type: String
+  VpcPrivateSubnetIds:
+    Type: 'String'
+    Description: 'List of private subnet IDs for the VPC.'
+
+Resources:
+  PollingLogs:
+    Type: 'AWS::Logs::LogGroup'
+    Properties:
+      LogGroupName: !Sub '/aws/lambda/telerik-reports-polling-${Environment}'
+      RetentionInDays: !Ref LogRetentionDays
+      Tags:
+        - Key: 'Name'
+          Value: 'Telerik Reports Polling Logs'
+        - Key: 'Environment'
+          Value: !Ref Environment
+
+  GeneratorLogs:
+    Type: 'AWS::Logs::LogGroup'
+    Properties:
+      LogGroupName: !Sub '/aws/lambda/telerik-reports-generator-${Environment}'
+      RetentionInDays: !Ref LogRetentionDays
+      Tags:
+        - Key: 'Name'
+          Value: 'Telerik Reports Generator Logs'
+        - Key: 'Environment'
+          Value: !Ref Environment
+
+  ReportPollingFunction:
+    Type: 'AWS::Lambda::Function'
+    Properties:
+      FunctionName: !Sub 'telerik-reports-polling-${Environment}'
+      Role: !Ref LambdaRoleArn
+      Handler: 'ReportScheduler::ReportScheduler.PollingFunction::FunctionHandler'
+      Runtime: 'dotnet8'
+      Timeout: !Ref LambdaTimeout
+      MemorySize: 512
+      Code:
+        S3Bucket: !Ref PollingLambdaS3Bucket
+        S3Key: !Ref PollingLambdaS3Key
+      VpcConfig:
+        SubnetIds: !Split [',', !Ref VpcPrivateSubnetIds]
+        SecurityGroupIds:
+          - !Ref LambdaSgId
+      Environment:
+        Variables:
+          REPORT_QUEUE_URL: !Ref ReportQueueUrl
+          ENVIRONMENT: !Ref Environment
+          DB_CONNECTION: !Sub '{{resolve:ssm:${DbConnectionSsmParameterName}}}'
+          API_URL: !Sub 'http://${FfavorsApiAlbDnsName}'
+      Tags:
+        - Key: 'Name'
+          Value: 'Telerik Reports Polling'
+        - Key: 'Environment'
+          Value: !Ref Environment
+    DependsOn:
+      - PollingLogs
+
+  ReportGeneratorFunction:
+    Type: 'AWS::Lambda::Function'
+    Properties:
+      FunctionName: !Sub 'telerik-reports-generator-${Environment}'
+      Role: !Ref LambdaRoleArn
+      Handler: 'ReportGenerator::ReportGenerator.SqsFunction::FunctionHandler'
+      Runtime: 'dotnet8'
+      Timeout: !Ref LambdaTimeout
+      MemorySize: !Ref LambdaMemorySize
+      Code:
+        S3Bucket: !Ref GeneratorLambdaS3Bucket
+        S3Key: !Ref GeneratorLambdaS3Key
+      VpcConfig:
+        SubnetIds: !Split [',', !Ref VpcPrivateSubnetIds]
+        SecurityGroupIds:
+          - !Ref LambdaSgId
+      Environment:
+        Variables:
+          REPORTS_BUCKET_NAME: !Ref ReportsBucketName
+          REPORTS_BUCKET: !Ref ReportsBucketName
+          FROM_EMAIL: !Ref FromEmail
+          ENVIRONMENT: !Ref Environment
+          DB_CONNECTION: !Sub '{{resolve:ssm:${DbConnectionSsmParameterName}}}'
+          API_URL: !Sub 'http://${FfavorsApiAlbDnsName}'
+      Tags:
+        - Key: 'Name'
+          Value: 'Telerik Reports Generator'
+        - Key: 'Environment'
+          Value: !Ref Environment
+    DependsOn:
+      - GeneratorLogs
+
+  SqsTrigger:
+    Type: 'AWS::Lambda::EventSourceMapping'
+    Properties:
+      EventSourceArn: !Ref ReportQueueArn
+      FunctionName: !GetAtt ReportGeneratorFunction.Arn
+      BatchSize: 1
+      ScalingConfig:
+        MaximumConcurrency: !Ref MaxConcurrentExecutions
+
+  DailyPollingRule:
+    Type: 'AWS::Events::Rule'
+    Properties:
+      Name: !Sub 'telerik-reports-daily-polling-${Environment}'
+      Description: 'Triggers report polling daily at 8 AM UTC'
+      ScheduleExpression: !Ref PollingSchedule
+      Targets:
+        - Arn: !GetAtt ReportPollingFunction.Arn
+          Id: 'PollingTarget'
+      Tags:
+        - Key: 'Name'
+          Value: 'Daily Report Polling'
+        - Key: 'Environment'
+          Value: !Ref Environment
+
+  AllowPollingEventBridgePermission:
+    Type: 'AWS::Lambda::Permission'
+    Properties:
+      Action: 'lambda:InvokeFunction'
+      FunctionName: !Ref ReportPollingFunction
+      Principal: 'events.amazonaws.com'
+
+Outputs:
+  ReportPollingFunctionName:
+    Description: 'Name of the Report Polling Function'
+    Value: !Ref ReportPollingFunction
+  ReportGeneratorFunctionName:
+    Description: 'Name of the Report Generator Function'
+    Value: !Ref ReportGeneratorFunction

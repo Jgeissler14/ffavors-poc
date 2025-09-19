@@ -1,0 +1,135 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Root stack for the Telerik Reports Scheduler and FFavors API.'
+
+Parameters:
+  Environment:
+    Type: String
+    Default: 'dev'
+  FromEmail:
+    Type: String
+  ReportsBucketName:
+    Type: String
+    Default: 'telerik-reports-poc-bucket'
+  AlarmEmail:
+    Type: String
+    Default: ''
+  LambdaTimeout:
+    Type: Number
+    Default: 300
+  LambdaMemorySize:
+    Type: Number
+    Default: 1024
+  LogRetentionDays:
+    Type: Number
+    Default: 14
+  S3LifecycleDays:
+    Type: Number
+    Default: 90
+  PollingSchedule:
+    Type: String
+    Default: 'cron(0 8 * * ? *)'
+  MaxConcurrentExecutions:
+    Type: Number
+    Default: 50
+  VpcId:
+    Type: 'AWS::EC2::VPC::Id'
+  PrivateSubnetIds:
+    Type: 'String'
+    Description: 'List of private subnet IDs for the VPC.'
+    Default: 'subnet-01bb73db87bb2699d,subnet-0794816118bcbcc1d,subnet-0f478a3e62ccfe3ba'
+  DbConnectionSsmParameterName:
+    Type: String
+  PollingLambdaS3Bucket:
+    Type: String
+  PollingLambdaS3Key:
+    Type: String
+  GeneratorLambdaS3Bucket:
+    Type: String
+  GeneratorLambdaS3Key:
+    Type: String
+
+Resources:
+  NetworkingStack:
+    Type: 'AWS::CloudFormation::Stack'
+    Properties:
+      TemplateURL: 'https://telerik-reports-poc-bucket-dev.s3.amazonaws.com/cloudformation/networking.yaml'
+      Parameters:
+        Environment: !Ref Environment
+        VpcId: !Ref VpcId
+        VpcPrivateSubnetIds: !Ref PrivateSubnetIds
+
+  QueuesStack:
+    Type: 'AWS::CloudFormation::Stack'
+    Properties:
+      TemplateURL: 'https://telerik-reports-poc-bucket-dev.s3.amazonaws.com/cloudformation/queues.yaml'
+      Parameters:
+        Environment: !Ref Environment
+        LambdaTimeout: !Ref LambdaTimeout
+
+  IamStack:
+    Type: 'AWS::CloudFormation::Stack'
+    Properties:
+      TemplateURL: 'https://telerik-reports-poc-bucket-dev.s3.amazonaws.com/cloudformation/iam.yaml'
+      Parameters:
+        Environment: !Ref Environment
+        FromEmail: !Ref FromEmail
+        DbConnectionSsmParameterName: !Ref DbConnectionSsmParameterName
+        ReportsBucketArn: !Sub 'arn:aws:s3:::${ReportsBucketName}'
+        ReportQueueArn: !GetAtt QueuesStack.Outputs.ReportQueueArn
+        ReportDlqArn: !GetAtt QueuesStack.Outputs.ReportDlqArn
+
+  EcsStack:
+    Type: 'AWS::CloudFormation::Stack'
+    Properties:
+      TemplateURL: 'https://telerik-reports-poc-bucket-dev.s3.amazonaws.com/cloudformation/ecs.yaml'
+      Parameters:
+        Environment: !Ref Environment
+        VpcId: !Ref VpcId
+        FfavorsApiAlbSgId: !GetAtt NetworkingStack.Outputs.FfavorsApiAlbSgId
+        FfavorsApiEcsTasksSgId: !GetAtt NetworkingStack.Outputs.FfavorsApiEcsTasksSgId
+        FfavorsApiEcsExecutionRoleArn: !GetAtt IamStack.Outputs.FfavorsApiEcsExecutionRoleArn
+        FfavorsApiEcsTaskRoleArn: !GetAtt IamStack.Outputs.FfavorsApiEcsTaskRoleArn
+        LogRetentionDays: !Ref LogRetentionDays
+        VpcPrivateSubnetIds: !Ref PrivateSubnetIds
+
+  LambdasStack:
+    Type: 'AWS::CloudFormation::Stack'
+    Properties:
+      TemplateURL: 'https://telerik-reports-poc-bucket-dev.s3.amazonaws.com/cloudformation/lambdas.yaml'
+      Parameters:
+        Environment: !Ref Environment
+        LambdaTimeout: !Ref LambdaTimeout
+        LambdaMemorySize: !Ref LambdaMemorySize
+        LogRetentionDays: !Ref LogRetentionDays
+        PollingSchedule: !Ref PollingSchedule
+        MaxConcurrentExecutions: !Ref MaxConcurrentExecutions
+        DbConnectionSsmParameterName: !Ref DbConnectionSsmParameterName
+        PollingLambdaS3Bucket: !Ref PollingLambdaS3Bucket
+        PollingLambdaS3Key: !Ref PollingLambdaS3Key
+        GeneratorLambdaS3Bucket: !Ref GeneratorLambdaS3Bucket
+        GeneratorLambdaS3Key: !Ref GeneratorLambdaS3Key
+        LambdaRoleArn: !GetAtt IamStack.Outputs.LambdaRoleArn
+        ReportQueueArn: !GetAtt QueuesStack.Outputs.ReportQueueArn
+        ReportQueueUrl: !GetAtt QueuesStack.Outputs.ReportQueueUrl
+        LambdaSgId: !GetAtt NetworkingStack.Outputs.LambdaSgId
+        FfavorsApiAlbDnsName: !GetAtt EcsStack.Outputs.FfavorsApiAlbDnsName
+        ReportsBucketName: !Ref ReportsBucketName
+        FromEmail: !Ref FromEmail
+        VpcPrivateSubnetIds: !Ref PrivateSubnetIds
+
+  MonitoringStack:
+    Type: 'AWS::CloudFormation::Stack'
+    Properties:
+      TemplateURL: 'https://telerik-reports-poc-bucket-dev.s3.amazonaws.com/cloudformation/monitoring.yaml'
+      Parameters:
+        Environment: !Ref Environment
+        AlarmEmail: !Ref AlarmEmail
+        ReportPollingFunctionName: !GetAtt LambdasStack.Outputs.ReportPollingFunctionName
+        ReportGeneratorFunctionName: !GetAtt LambdasStack.Outputs.ReportGeneratorFunctionName
+        ReportQueueName: !GetAtt QueuesStack.Outputs.ReportQueueName
+        ReportDlqName: !GetAtt QueuesStack.Outputs.ReportDlqName
+
+Outputs:
+  FfavorsApiAlbDnsName:
+    Description: 'DNS name of the FFavors API Application Load Balancer'
+    Value: !GetAtt EcsStack.Outputs.FfavorsApiAlbDnsName

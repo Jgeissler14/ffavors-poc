@@ -1,0 +1,31 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Parameters:
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Default: vpc-0c6b7e34ce137c4b7
+  SubnetIds:
+    Type: CommaDelimitedList
+    Default: "subnet-01bb73db87bb2699d,subnet-0794816118bcbcc1d"
+
+Resources:
+  TestSG:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Test SG
+      VpcId: !Ref VpcId
+
+  TestALB:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Scheme: internal
+      Type: application
+      SecurityGroups: [!Ref TestSG]
+      Subnets: !Ref SubnetIds
+
+  TestTG:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Port: 80
+      Protocol: HTTP
+      VpcId: !Ref VpcId
+      TargetType: ip

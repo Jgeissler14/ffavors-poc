@@ -1,12 +1,13 @@
 using Amazon.Lambda.Core;
 using Amazon.SQS;
 using Amazon.SQS.Model;
-using Npgsql;
 using System;
 using System.Collections.Generic;
+using System.Linq;
+using System.Net.Http;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Threading.Tasks;
-
 
 [assembly: LambdaSerializer(typeof(Amazon.Lambda.Serialization.SystemTextJson.DefaultLambdaJsonSerializer))]
 
@@ -16,59 +17,81 @@ namespace ReportScheduler
     {
         private readonly IAmazonSQS _sqsClient;
         private readonly string _queueUrl;
-        private readonly string _dbConnectionString;
+        private readonly string _apiUrl;
+        private readonly HttpClient _httpClient;
 
         public PollingFunction()
         {
             _sqsClient = new AmazonSQSClient();
             _queueUrl = Environment.GetEnvironmentVariable("REPORT_QUEUE_URL");
-            _dbConnectionString = Environment.GetEnvironmentVariable("DB_CONNECTION");
+            _apiUrl = Environment.GetEnvironmentVariable("API_URL");
+            _httpClient = new HttpClient();
 
-            if (string.IsNullOrEmpty(_queueUrl) || string.IsNullOrEmpty(_dbConnectionString))
+            if (string.IsNullOrEmpty(_queueUrl))
             {
-                throw new InvalidOperationException("Environment variables REPORT_QUEUE_URL and DB_CONNECTION must be set.");
+                throw new InvalidOperationException("Environment variable REPORT_QUEUE_URL must be set.");
+            }
+            if (string.IsNullOrEmpty(_apiUrl))
+            {
+                throw new InvalidOperationException("Environment variable API_URL must be set.");
             }
         }
 
         public async Task<PollingResponse> FunctionHandler(ILambdaContext context)
         {
-            var schedulesToRun = new List<ReportsSchedulerInfo>();
+            var schedulesToRun = new List<Schedule>();
             var currentTime = DateTime.UtcNow;
 
-            // 1. Fetch schedules from the database
             try
             {
-                await using var conn = new NpgsqlConnection(_dbConnectionString);
-                await conn.OpenAsync();
+                var response = await _httpClient.GetAsync($"{_apiUrl}/api/Schedules/1");
+                response.EnsureSuccessStatusCode();
+                var responseBody = await response.Content.ReadAsStringAsync();
+                var apiResponse = JsonSerializer.Deserialize<ApiResponse>(responseBody, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
 
-                var query = @"SELECT reports_sched_id, report_id, param_id, app_id, next_run_day, requestor, next_run_date_time, last_run_date_time, auto_sched, transdate 
-                            FROM reports_scheduler WHERE next_run_date_time <= @CurrentTime AND auto_sched = 'Y'";
-                
-                await using var cmd = new NpgsqlCommand(query, conn);
-                cmd.Parameters.AddWithValue("CurrentTime", currentTime);
-
-                await using var reader = await cmd.ExecuteReaderAsync();
-                while (await reader.ReadAsync())
+                if (apiResponse != null && apiResponse.Schedules != null)
                 {
-                    schedulesToRun.Add(new ReportsSchedulerInfo
+                    var parametersByScheduleId = apiResponse.Parameters
+                        .GroupBy(p => p.Schedule_ID)
+                        .ToDictionary(g => g.Key, g => g.ToDictionary(p => p.Param_Name, p => p.Param_Value));
+
+                    foreach (var schedData in apiResponse.Schedules)
                     {
-                        Reports_Sched_ID = reader.GetInt32(0),
-                        Report_ID = reader.IsDBNull(1) ? (int?)null : reader.GetInt32(1),
-                        Param_ID = reader.IsDBNull(2) ? (int?)null : reader.GetInt32(2),
-                        App_ID = reader.IsDBNull(3) ? (int?)null : reader.GetInt32(3),
-                        Next_Run_Day = reader.IsDBNull(4) ? null : reader.GetString(4),
-                        Requestor = reader.IsDBNull(5) ? null : reader.GetString(5),
-                        Next_Run_Date_Time = reader.IsDBNull(6) ? (DateTime?)null : reader.GetDateTime(6),
-                        Last_Run_Date_Time = reader.IsDBNull(7) ? (DateTime?)null : reader.GetDateTime(7),
-                        Auto_Sched = reader.IsDBNull(8) ? null : reader.GetString(8),
-                        TransDate = reader.IsDBNull(9) ? (DateTime?)null : reader.GetDateTime(9)
-                    });
+                        Dictionary<string, string> parametersDict = null;
+                        if (parametersByScheduleId.TryGetValue(schedData.reports_sched_id, out var p))
+                        {
+                            parametersDict = p;
+                        }
+
+                        var queryParams = new List<string>();
+                        if (parametersDict != null)
+                        {
+                            foreach (var param in parametersDict)
+                            {
+                                if (!string.IsNullOrEmpty(param.Value))
+                                {
+                                    queryParams.Add($"{Uri.EscapeDataString(param.Key)}={Uri.EscapeDataString(param.Value)}");
+                                }
+                            }
+                        }
+
+                        schedulesToRun.Add(new Schedule
+                        {
+                            reports_sched_id = schedData.reports_sched_id,
+                            report_name = schedData.report_name,
+                            parameters = string.Join("&", queryParams),
+                            toEmails = schedData.toEmails,
+                            ccEmails = schedData.ccEmails,
+                            Subject = schedData.Subject,
+                            Body = schedData.Body
+                        });
+                    }
                 }
             }
             catch (Exception ex)
             {
-                context.Logger.LogError($"Database query failed: {ex.Message}");
-                return new PollingResponse { Success = false, Message = $"Database error: {ex.Message}", CheckTime = currentTime };
+                context.Logger.LogError($"API call failed: {ex.Message}");
+                return new PollingResponse { Success = false, Message = $"API error: {ex.Message}", CheckTime = currentTime };
             }
 
             if (schedulesToRun.Count == 0)
@@ -79,19 +102,17 @@ namespace ReportScheduler
             context.Logger.LogInformation($"Found {schedulesToRun.Count} reports to schedule.");
             var queuedReports = new List<int>();
 
-            // 2. Queue reports and update the database
             foreach (var schedule in schedulesToRun)
             {
                 try
                 {
                     await PublishToQueue(schedule, context);
-                    await UpdateScheduleInDb(schedule, currentTime, context);
-                    queuedReports.Add(schedule.Reports_Sched_ID);
-                    context.Logger.LogInformation($"Successfully queued and updated schedule ID: {schedule.Reports_Sched_ID}");
+                    queuedReports.Add(schedule.reports_sched_id);
+                    context.Logger.LogInformation($"Successfully queued schedule ID: {schedule.reports_sched_id}");
                 }
                 catch (Exception ex)
                 {
-                    context.Logger.LogError($"Failed to process schedule {schedule.Reports_Sched_ID}: {ex.Message}");
+                    context.Logger.LogError($"Failed to process schedule {schedule.reports_sched_id}: {ex.Message}");
                 }
             }
 
@@ -104,20 +125,22 @@ namespace ReportScheduler
             };
         }
 
-        private async Task PublishToQueue(ReportsSchedulerInfo schedule, ILambdaContext context)
+        private async Task PublishToQueue(Schedule schedule, ILambdaContext context)
         {
+            if (string.IsNullOrEmpty(schedule.report_name))
+            {
+                throw new InvalidOperationException($"Report name is missing for schedule ID: {schedule.reports_sched_id}");
+            }
+
             var message = new ReportQueueMessage
             {
-                ReportId = schedule.Report_ID,
-                ScheduleId = schedule.Reports_Sched_ID,
-                Parameters = new Dictionary<string, object>
-                {
-                    ["ParamId"] = schedule.Param_ID?.ToString() ?? "",
-                    ["AppId"] = schedule.App_ID?.ToString() ?? ""
-                },
-                // TODO: Get the recipients from the database or configuration
-                Recipients = new List<string> { "jgeissler@eccoselect.com" }, // Default recipient if none specified
-                QueuedAt = DateTime.UtcNow
+                ReportName = schedule.report_name,
+                Parameters = schedule.parameters,
+                ScheduleId = schedule.reports_sched_id,
+                ToEmails = schedule.toEmails,
+                CcEmails = schedule.ccEmails,
+                Subject = schedule.Subject,
+                Body = schedule.Body
             };
 
             var messageBody = JsonSerializer.Serialize(message);
@@ -128,71 +151,75 @@ namespace ReportScheduler
                 MessageBody = messageBody,
                 MessageAttributes = new Dictionary<string, MessageAttributeValue>
                 {
-                    ["ReportId"] = new MessageAttributeValue { DataType = "String", StringValue = schedule.Report_ID.ToString() },
-                    ["ScheduleId"] = new MessageAttributeValue { DataType = "String", StringValue = schedule.Reports_Sched_ID.ToString() }
+                    ["ReportName"] = new MessageAttributeValue { DataType = "String", StringValue = schedule.report_name },
+                    ["ScheduleId"] = new MessageAttributeValue { DataType = "String", StringValue = schedule.reports_sched_id.ToString() }
                 }
             };
 
             await _sqsClient.SendMessageAsync(sendRequest);
-            context.Logger.LogInformation($"Sent message to SQS for Report ID: {schedule.Report_ID}");
-        }
-
-        private async Task UpdateScheduleInDb(ReportsSchedulerInfo schedule, DateTime runTime, ILambdaContext context)
-        {
-            try
-            {
-                await using var conn = new NpgsqlConnection(_dbConnectionString);
-                await conn.OpenAsync();
-
-                // Calculate next run time, assuming weekly schedule if Next_Run_Day is set
-                var nextRun = schedule.Next_Run_Date_Time?.AddDays(7) ?? runTime.AddDays(7);
-
-                var query = @"update public.reports_scheduler 
-                            set last_run_date_time = @LastRun, next_run_date_time = @NextRun 
-                            where reports_sched_id = @ScheduleId";
-
-                await using var cmd = new NpgsqlCommand(query, conn);
-                cmd.Parameters.AddWithValue("LastRun", runTime);
-                cmd.Parameters.AddWithValue("NextRun", nextRun);
-                cmd.Parameters.AddWithValue("ScheduleId", schedule.Reports_Sched_ID);
-
-                var rowsAffected = await cmd.ExecuteNonQueryAsync();
-                if (rowsAffected == 0)
-                {
-                    context.Logger.LogWarning($"Update failed: No rows affected for Schedule ID: {schedule.Reports_Sched_ID}");
-                }
-            }
-            catch (Exception ex)
-            {
-                context.Logger.LogError($"Failed to update schedule {schedule.Reports_Sched_ID} in DB: {ex.Message}");
-                // Throw to ensure the caller knows the update failed
-                throw;
-            }
+            context.Logger.LogInformation($"Sent message to SQS for Report Name: {schedule.report_name}");
         }
     }
 
-    // Maps to the Reports_Scheduler table
-    public class ReportsSchedulerInfo
+    public class ApiResponse
     {
-        public int Reports_Sched_ID { get; set; }
-        public int? Report_ID { get; set; }
-        public int? Param_ID { get; set; }
-        public int? App_ID { get; set; }
-        public string Next_Run_Day { get; set; }
-        public string Requestor { get; set; }
-        public DateTime? Next_Run_Date_Time { get; set; }
-        public DateTime? Last_Run_Date_Time { get; set; }
-        public string Auto_Sched { get; set; }
-        public DateTime? TransDate { get; set; }
+        public List<ScheduleData> Schedules { get; set; }
+        public List<ParameterData> Parameters { get; set; }
+    }
+
+    public class ScheduleData
+    {
+        [JsonPropertyName("Schedule_ID")]
+        public int reports_sched_id { get; set; }
+
+        [JsonPropertyName("Report_Name")]
+        public string report_name { get; set; }
+
+        [JsonPropertyName("toEmails")]
+        public string toEmails { get; set; }
+
+        [JsonPropertyName("ccEmails")]
+        public string ccEmails { get; set; }
+
+        [JsonPropertyName("Subject")]
+        public string Subject { get; set; }
+
+        [JsonPropertyName("Body")]
+        public string Body { get; set; }
+    }
+
+    public class ParameterData
+    {
+        [JsonPropertyName("Schedule_ID")]
+        public int Schedule_ID { get; set; }
+
+        [JsonPropertyName("Param_Name")]
+        public string Param_Name { get; set; }
+
+        [JsonPropertyName("Param_Value")]
+        public string Param_Value { get; set; }
+    }
+
+    public class Schedule
+    {
+        public int reports_sched_id { get; set; }
+        public string report_name { get; set; }
+        public string parameters { get; set; }
+        public string toEmails { get; set; }
+        public string ccEmails { get; set; }
+        public string Subject { get; set; }
+        public string Body { get; set; }
     }
 
     public class ReportQueueMessage
     {
-        public int? ReportId { get; set; }
+        public string ReportName { get; set; }
+        public string Parameters { get; set; }
         public int ScheduleId { get; set; }
-        public List<string> Recipients { get; set; } = new();
-        public Dictionary<string, object> Parameters { get; set; } = new();
-        public DateTime QueuedAt { get; set; }
+        public string ToEmails { get; set; }
+        public string CcEmails { get; set; }
+        public string Subject { get; set; }
+        public string Body { get; set; }
     }
 
     public class PollingResponse

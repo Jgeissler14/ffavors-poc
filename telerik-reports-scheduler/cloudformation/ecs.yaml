@@ -1,0 +1,155 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'ECS resources for the FFavors API.'
+
+Parameters:
+  Environment:
+    Type: String
+  VpcId:
+    Type: 'AWS::EC2::VPC::Id'
+  FfavorsApiAlbSgId:
+    Type: 'AWS::EC2::SecurityGroup::Id'
+  FfavorsApiEcsTasksSgId:
+    Type: 'AWS::EC2::SecurityGroup::Id'
+  FfavorsApiEcsExecutionRoleArn:
+    Type: String
+  FfavorsApiEcsTaskRoleArn:
+    Type: String
+  LogRetentionDays:
+    Type: Number
+  VpcPrivateSubnetIds:
+    Type: 'String'
+    Description: 'List of private subnet IDs for the VPC.'
+
+Resources:
+
+  FfavorsApiCluster:
+    Type: 'AWS::ECS::Cluster'
+    Properties:
+      ClusterName: !Sub 'ffavorsapi-cluster-${Environment}'
+      ClusterSettings:
+        - Name: 'containerInsights'
+          Value: 'enabled'
+      Tags:
+        - Key: 'Name'
+          Value: 'FFavors API Cluster'
+        - Key: 'Environment'
+          Value: !Ref Environment
+
+  FfavorsApiAlb:
+    Type: 'AWS::ElasticLoadBalancingV2::LoadBalancer'
+    Properties:
+      Scheme: 'internal'
+      SecurityGroups:
+        - !Ref FfavorsApiAlbSgId
+      Subnets: 
+        - !Select [0, !Split [',', !Ref VpcPrivateSubnetIds]]
+        - !Select [1, !Split [',', !Ref VpcPrivateSubnetIds]]
+      Tags:
+        - Key: 'Name'
+          Value: 'FFavors API ALB'
+        - Key: 'Environment'
+          Value: !Ref Environment
+
+  FfavorsApiTg:
+    Type: 'AWS::ElasticLoadBalancingV2::TargetGroup'
+    Properties:
+      Port: 8080
+      Protocol: 'HTTP'
+      VpcId: !Ref VpcId
+      TargetType: 'ip'
+      HealthCheckPath: '/swagger/index.html'
+      HealthCheckProtocol: 'HTTP'
+      Tags:
+      - Key: 'Name'
+        Value: 'FFavors API Target Group'
+      - Key: 'Environment'
+        Value: !Ref Environment
+
+  FfavorsApiListener:
+    Type: 'AWS::ElasticLoadBalancingV2::Listener'
+    Properties:
+      LoadBalancerArn: !Ref FfavorsApiAlb
+      Port: 80
+      Protocol: 'HTTP'
+      DefaultActions:
+        - Type: 'forward'
+          ForwardConfig:
+            TargetGroups:
+              - TargetGroupArn: !Ref FfavorsApiTg
+
+  FfavorsApiLogs:
+    Type: 'AWS::Logs::LogGroup'
+    Properties:
+      LogGroupName: !Sub '/ecs/ffavorsapi-${Environment}'
+      RetentionInDays: !Ref LogRetentionDays
+      Tags:
+        - Key: 'Name'
+          Value: 'FFavors API Logs'
+        - Key: 'Environment'
+          Value: !Ref Environment
+
+  FfavorsApiTask:
+    Type: 'AWS::ECS::TaskDefinition'
+    Properties:
+      Family: !Sub 'ffavorsapi-${Environment}'
+      NetworkMode: 'awsvpc'
+      RequiresCompatibilities:
+        - 'FARGATE'
+      Cpu: '256'
+      Memory: '512'
+      ExecutionRoleArn: !Ref FfavorsApiEcsExecutionRoleArn
+      TaskRoleArn: !Ref FfavorsApiEcsTaskRoleArn
+      ContainerDefinitions:
+        - Name: 'ffavorsapi'
+          Image: '858946449855.dkr.ecr.us-east-1.amazonaws.com/ffavorsapi-dev:latest' #TODO: Update for prod
+          Essential: true
+          PortMappings:
+            - ContainerPort: 8080
+              HostPort: 8080
+          LogConfiguration:
+            LogDriver: 'awslogs'
+            Options:
+              'awslogs-group': !Ref FfavorsApiLogs
+              'awslogs-region': !Ref 'AWS::Region'
+              'awslogs-stream-prefix': 'ecs'
+          Environment:
+            - Name: 'ASPNETCORE_ENVIRONMENT'
+              Value: 'Development'
+            - Name: 'ASPNETCORE_URLS'
+              Value: 'http://+:8080'
+      Tags:
+        - Key: 'Name'
+          Value: 'FFavors API Task Definition'
+        - Key: 'Environment'
+          Value: !Ref Environment
+
+  FfavorsApiService:
+    Type: 'AWS::ECS::Service'
+    Properties:
+      ServiceName: !Sub 'ffavorsapi-service-${Environment}'
+      Cluster: !Ref FfavorsApiCluster
+      TaskDefinition: !Ref FfavorsApiTask
+      DesiredCount: 1
+      LaunchType: 'FARGATE'
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          Subnets: !Split [',', !Ref VpcPrivateSubnetIds]
+          SecurityGroups:
+            - !Ref FfavorsApiEcsTasksSgId
+          AssignPublicIp: 'DISABLED'
+      LoadBalancers:
+        - TargetGroupArn: !Ref FfavorsApiTg
+          ContainerName: 'ffavorsapi'
+          ContainerPort: 8080
+      Tags:
+        - Key: 'Name'
+          Value: 'FFavors API ECS Service'
+        - Key: 'Environment'
+          Value: !Ref Environment
+    DependsOn:
+      - FfavorsApiListener
+
+Outputs:
+  FfavorsApiAlbDnsName:
+    Description: 'DNS name of the FFavors API Application Load Balancer'
+    Value: !GetAtt FfavorsApiAlb.DNSName

@@ -108,6 +108,13 @@ resource "aws_security_group" "lambda_sg" {
     cidr_blocks = ["0.0.0.0/0"]
   }
 
+  ingress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "tcp"
+    self        = true
+  }
+
   tags = {
     Name        = "Telerik Reports Lambda SG"
     Environment = var.environment
@@ -320,7 +327,7 @@ resource "aws_lambda_function" "report_polling" {
   handler         = "ReportScheduler::ReportScheduler.PollingFunction::FunctionHandler"
   source_code_hash = data.archive_file.polling_zip.output_base64sha256
   runtime         = "dotnet8"
-  timeout         = 60
+  timeout         = var.lambda_timeout
   memory_size     = 512
 
   vpc_config {
@@ -333,6 +340,7 @@ resource "aws_lambda_function" "report_polling" {
       REPORT_QUEUE_URL = aws_sqs_queue.report_queue.url
       ENVIRONMENT      = var.environment
       DB_CONNECTION      = data.aws_ssm_parameter.db_connection.value
+      API_URL            = "http://${aws_lb.ffavorsapi_alb.dns_name}"
     }
   }
 
@@ -348,12 +356,36 @@ resource "aws_lambda_function" "report_polling" {
   }
 }
 
+# Build Lambda packages
+resource "null_resource" "build_generator" {
+  triggers = {
+    code_hash = filebase64sha256("../src/ReportGenerator/SqsFunction.cs")
+  }
+
+  provisioner "local-exec" {
+    command = <<-EOT
+      cd ../src/ReportGenerator
+      dotnet publish -c Release -r linux-x64 --self-contained false
+    EOT
+  }
+}
+
+# Package Lambda functions
+data "archive_file" "generator_zip" {
+  type        = "zip"
+  source_dir  = "../src/ReportGenerator/bin/Release/net8.0/linux-x64/publish"
+  output_path = "../generator-deployment.zip"
+  depends_on  = [null_resource.build_generator]
+}
+
 # Report Generator Lambda Function (triggered by SQS)
 resource "aws_lambda_function" "report_generator" {
+  filename         = data.archive_file.generator_zip.output_path
   function_name    = "telerik-reports-generator-${var.environment}"
   role            = aws_iam_role.lambda_role.arn
-  package_type     = "Image"
-  image_uri        = "${aws_ecr_repository.telerik_report_generator_ecr.repository_url}:latest"
+  handler         = "ReportGenerator::ReportGenerator.SqsFunction::FunctionHandler"
+  source_code_hash = data.archive_file.generator_zip.output_base64sha256
+  runtime         = "dotnet8"
   timeout         = var.lambda_timeout
   memory_size     = var.lambda_memory_size
 
@@ -369,13 +401,13 @@ resource "aws_lambda_function" "report_generator" {
       FROM_EMAIL         = var.from_email
       ENVIRONMENT        = var.environment
       DB_CONNECTION      = data.aws_ssm_parameter.db_connection.value
+      API_URL            = "http://${aws_lb.ffavorsapi_alb.dns_name}"
     }
   }
 
   depends_on = [
     aws_iam_role_policy.lambda_policy,
     aws_cloudwatch_log_group.generator_logs,
-    aws_ecr_repository.telerik_report_generator_ecr # Add dependency on ECR repo
   ]
 
   tags = {
@@ -577,10 +609,10 @@ resource "aws_security_group" "ffavorsapi_alb" {
   vpc_id      = var.vpc_id
 
   ingress {
-    protocol    = "tcp"
-    from_port   = 80
-    to_port     = 80
-    cidr_blocks = ["0.0.0.0/0"]
+    protocol        = "tcp"
+    from_port       = 80
+    to_port         = 80
+    security_groups = [aws_security_group.lambda_sg.id]
   }
 
   egress {
@@ -639,7 +671,7 @@ locals {
 # Application Load Balancer
 resource "aws_lb" "ffavorsapi_alb" {
   name               = "ffavorsapi-alb-${var.environment}"
-  internal           = false
+  internal           = true
   load_balancer_type = "application"
   security_groups    = [aws_security_group.ffavorsapi_alb.id]
   subnets            = local.unique_subnets
